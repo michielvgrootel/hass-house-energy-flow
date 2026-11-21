@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Home Energy Scene Card – demo</title>
+<style>
+  body { margin: 0; background: #111418; color: #e5e7eb; font: 14px system-ui, -apple-system, sans-serif; display: flex; flex-wrap: wrap; gap: 28px; justify-content: center; padding: 28px 16px; }
+  .card { width: min(460px, 100%); }
+  .controls { width: min(320px, 100%); display: flex; flex-direction: column; gap: 14px; }
+  label { display: flex; flex-direction: column; gap: 4px; }
+  .row { flex-direction: row; align-items: center; gap: 8px; }
+  input[type=range] { width: 100%; }
+  button { padding: 8px 12px; border-radius: 8px; border: 1px solid #374151; background: #1f2937; color: #fff; cursor: pointer; }
+  pre { background: #0b0d10; padding: 10px; border-radius: 8px; font-size: 12px; overflow: auto; }
+</style>
+<script src="./home-energy-scene-card.js"></script>
+</head>
+<body>
+  <div class="card"><home-energy-scene-card id="card"></home-energy-scene-card></div>
+  <div class="controls">
+    <label>Time of day: <b id="hourLbl"></b><input id="hour" type="range" min="0" max="24" step="0.05" value="13"></label>
+    <button id="play">▶ Play a full day (40 s)</button>
+    <label class="row"><input id="ev" type="checkbox" checked> EV charging</label>
+    <label class="row"><input id="hp" type="checkbox" checked> Heat pump running</label>
+    <label>Language
+      <select id="lang"><option value="en">English</option><option value="nl">Nederlands</option></select>
+    </label>
+    <pre id="state"></pre>
+  </div>
+<script>
+  const card = document.getElementById('card');
+  const cfg = (lang) => ({
+    type: 'custom:home-energy-scene-card',
+    language: lang,
+    entities: {
+      solar: 'sensor.solar_power',
+      grid: 'sensor.grid_power',
+      battery: 'sensor.battery_power',
+      battery_soc: 'sensor.battery_soc',
+      ev: 'sensor.ev_power',
+      ev_soc: 'sensor.ev_soc',
+      heatpump: 'sensor.heatpump_power',
+    },
+  });
+  card.setConfig(cfg('en'));
+
+  let hour = 13, soc = 55, evSoc = 40, playing = false;
+  const $ = (id) => document.getElementById(id);
+
+  function tick(dtHours) {
+    const f = (hour - 7) / 12;
+    const solar = f > 0 && f < 1 ? Math.round(Math.sin(Math.PI * f) * 4600 + Math.random() * 60) : 0;
+    const home = Math.round(320 + (hour > 17 && hour < 23 ? 650 : 0) + Math.random() * 40);
+    const ev = $('ev').checked ? 7400 : 0;
+    const hp = $('hp').checked ? 1650 : 0;
+    const surplus = solar - home - ev - hp;
+    let battery = 0;
+    if (surplus > 0 && soc < 100) battery = Math.min(surplus, 3000);
+    else if (surplus < 0 && soc > 10) battery = -Math.min(-surplus, 3000);
+    soc = Math.max(0, Math.min(100, soc + (battery / 10000) * 100 * dtHours));
+    if (ev) evSoc = Math.min(100, evSoc + (ev / 60000) * 100 * dtHours);
+    const grid = Math.round(-(surplus - battery));
+    const s = (v, unit) => ({ state: String(v), attributes: { unit_of_measurement: unit } });
+    card.hass = {
+      language: $('lang').value,
+      states: {
+        'sensor.solar_power': s(solar, 'W'),
+        'sensor.grid_power': s(grid, 'W'),
+        'sensor.battery_power': s(battery, 'W'),
+        'sensor.battery_soc': s(soc.toFixed(1), '%'),
+        'sensor.ev_power': s((ev / 1000).toFixed(2), 'kW'),
+        'sensor.ev_soc': s(evSoc.toFixed(0), '%'),
+        'sensor.heatpump_power': s(hp, 'W'),
+      },
+    };
+    card.demoHour = hour;
+    $('hour').value = hour;
+    $('hourLbl').textContent = `${String(Math.floor(hour)).padStart(2, '0')}:${String(Math.floor((hour % 1) * 60)).padStart(2, '0')}`;
+    $('state').textContent = JSON.stringify({ solar, home, ev, hp, battery, grid, soc: +soc.toFixed(1) }, null, 1);
+  }
+
+  $('hour').addEventListener('input', (e) => { hour = +e.target.value; tick(0); });
+  ['ev', 'hp'].forEach((id) => $(id).addEventListener('change', () => tick(0)));
+  $('lang').addEventListener('change', (e) => { card.setConfig(cfg(e.target.value)); tick(0); });
+  $('play').addEventListener('click', () => { playing = !playing; $('play').textContent = playing ? '⏸ Pause' : '▶ Play a full day (40 s)'; });
+  let last = performance.now();
+  setInterval(() => {
+    const now = performance.now(), dt = (now - last) / 1000; last = now;
+    if (playing) { const dh = (dt / 40) * 24; hour = (hour + dh) % 24; tick(dh); }
+  }, 100);
+  setInterval(() => { if (!playing) tick(0); }, 2000);
+  tick(0);
+</script>
+</body>
+</html>
