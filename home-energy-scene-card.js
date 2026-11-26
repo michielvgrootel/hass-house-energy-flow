@@ -4,7 +4,7 @@
  * with solar roof, home battery, EV, heat pump and grid connection on a glossy floor.
  * Power lines pulse when energy flows; backdrop and lighting follow the time of day.
  */
-const HESC_VERSION = '3.3.0';
+const HESC_VERSION = '3.3.1';
 
 const I18N = {
   en: {
@@ -55,7 +55,7 @@ const box = (x0, x1, h, z0, z1, cf, cl, ct, m, y0 = 0) =>
 const hull = (x0, x1, y0, y1, z0, z1) => pts([[x0, y0, z1], [x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]], 1);
 
 // house: gable facing the street, ridge running back, garage on the left (1 unit ≈ 9 cm)
-const HW = 94, HD = 110, HE = 56, HR = 112, OV = 4;
+const HW = 94, HD = 132, HE = 56, HR = 112, OV = 4;
 const PITCH = (HR - HE) / (HW / 2);
 const LS = Math.hypot(HW / 2 + OV, HR - HE + OV * PITCH);                 // left roof plane, eave to ridge
 const rpt = (z, v) => { const t = 1 - v / LS; return [-OV + (HW / 2 + OV) * t, HE - OV * PITCH + (HR - HE + OV * PITCH) * t, z]; };
@@ -63,8 +63,8 @@ const frameRoof = (m) => {
   const p = P(HW / 2, HR, 0, m), dx = HW / 2 + OV, dy = HR - HE + OV * PITCH;
   return `matrix(${BZ[0]},${BZ[1]},${((-AX[0] * dx) / LS).toFixed(4)},${((-AX[1] * dx + m * K * dy) / LS).toFixed(4)},${p[0].toFixed(2)},${p[1].toFixed(2)})`;
 };
-const GAR = { x0: -60, x1: 0, z0: 74, z1: 122, h: 34, d0: -35, d1: -6, dh: 22.2 };   // d0..d1 = open door
-const PANELS = { groups: [6, 79], cols: 2, cw: 12.4, v0: 9, rows: 2, rh: 20.5 };   // 2x2 panels in front of and behind the dormer
+const GAR = { x0: -60, x1: 0, z0: 74, z1: 132, h: 34, d0: -35, d1: -6, dh: 22.2 };   // d0..d1 = open door
+const PANELS = { groups: [6, 101], cols: 2, cw: 12.4, v0: 9, rows: 2, rh: 20.5 };   // 2x2 panels in front of and behind the dormer
 const BAT = { x: -3.65, z0: 85.6, z1: 90.4, y0: 10.15, h: 0.45 };   // LED charge bar on the battery (Marstek Venus E, inside the garage)
 
 const HUB = [-44, 0, -22];
@@ -81,7 +81,7 @@ const FLOWS = [
 const LABELS = {
   grid: { at: [358, 196], anchor: [150, 0, 10.5] },
   home: { at: [266, 170], anchor: [79, 37, 0] },
-  solar: { at: [153, 94], anchor: rpt(91.4, 22) },
+  solar: { at: [155, 93], anchor: rpt(113.4, 22) },
   heatpump: { at: [94, 171.5], anchor: [-8, 40, 93], row: true },
   battery: { at: [50, 250], anchor: [-3.6, 9, 88] },
   ev: { at: [114, 250], anchor: [-28, 12, 6] },
@@ -204,17 +204,17 @@ function house(m) {
 
   // chimney (above the dormer, near the ridge)
   const cy = (x) => HE + PITCH * x;
-  s += poly([[35, cy(35), 51], [35, cy(35), 59], [35, 128, 59], [35, 128, 51]], '#4a2119', m);
-  s += poly([[35, cy(35), 51], [44, cy(44), 51], [44, 128, 51], [35, 128, 51]], '#6e3022', m);
-  s += poly([[34, 128, 50], [45, 128, 50], [45, 128, 60], [34, 128, 60]], '#b8bec6', m);
-  s += poly([[34, 128, 50], [45, 128, 50], [45, 126.5, 50], [34, 126.5, 50]], '#8b929b', m);
+  s += poly([[35, cy(35), 62], [35, cy(35), 70], [35, 128, 70], [35, 128, 62]], '#4a2119', m);
+  s += poly([[35, cy(35), 62], [44, cy(44), 62], [44, 128, 62], [35, 128, 62]], '#6e3022', m);
+  s += poly([[34, 128, 61], [45, 128, 61], [45, 128, 71], [34, 128, 71]], '#b8bec6', m);
+  s += poly([[34, 128, 61], [45, 128, 61], [45, 126.5, 61], [34, 126.5, 61]], '#8b929b', m);
 
   // dormer
-  const dz0 = 41, dz1 = 69, dx = 12, dt = 92, dxr = (dt - HE) / PITCH;
+  const dz0 = 52, dz1 = 80, dx = 12, dt = 92, dxr = (dt - HE) / PITCH;
   s += poly([[dx, cy(dx), dz0], [dxr, dt, dz0], [dx, dt, dz0]], '#b9c0c8', m);
   s += `<g transform="${frameZ(dx, 0, 0, m)}">
     <polygon points="${dz0},${-cy(dx)} ${dz1},${-cy(dx)} ${dz1},${-dt} ${dz0},${-dt}" fill="url(#gDormer)"/>
-    ${windowL(44, 54.5, 73, 89.5, m, { sill: false })}${windowL(55.5, 66, 73, 89.5, m, { sill: false })}
+    ${windowL(55, 65.5, 73, 89.5, m, { sill: false })}${windowL(66.5, 77, 73, 89.5, m, { sill: false })}
   </g>`;
   s += poly([[dx - 3, dt, dz0 - 1.5], [dxr + 1, dt, dz0 - 1.5], [dxr + 1, dt, dz1 + 1.5], [dx - 3, dt, dz1 + 1.5]], '#dfe3e8', m);
   s += poly([[dx - 3, dt, dz0 - 1.5], [dx - 3, dt, dz1 + 1.5], [dx - 3, dt - 3, dz1 + 1.5], [dx - 3, dt - 3, dz0 - 1.5]], '#c3c9d0', m);
@@ -359,7 +359,7 @@ const solids = (m) => tower(m) + house(m) + garage(m) + heatpump(m) + battery(m)
 function shadows() {
   const fp = (x0, x1, z0, z1) => `<polygon points="${pts([[x0, 0, z0], [x1, 0, z0], [x1, 0, z1], [x0, 0, z1]], 1)}"/>`;
   return `<g fill="#000" opacity=".55" filter="url(#shadow)">
-    ${fp(-4, HW + 3, -13, HD + 2)}${fp(-63, 1, 71, 124)}${fp(-32, -8, 3, 55)}${fp(141, 159, 11, 29)}
+    ${fp(-4, HW + 3, -13, HD + 2)}${fp(-63, 1, 71, 134)}${fp(-32, -8, 3, 55)}${fp(141, 159, 11, 29)}
   </g>`;
 }
 
