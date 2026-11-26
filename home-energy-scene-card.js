@@ -4,7 +4,7 @@
  * with solar roof, home battery, EV, heat pump and grid connection on a glossy floor.
  * Power lines pulse when energy flows; backdrop and lighting follow the time of day.
  */
-const HESC_VERSION = '3.3.1';
+const HESC_VERSION = '3.3.2';
 
 const I18N = {
   en: {
@@ -175,7 +175,7 @@ function house(m) {
   s += `<g transform="${frameZ(14, 0, 0, m)}">${rl(-10, 0, 0, 32, 'url(#pBrick)')}${rl(-10, 0, 0, 32, '#000', 'opacity=".2"')}${rl(-10, 0, 30.5, 32.6, '#c4cad1')}</g>`;
   s += `<g transform="${frameX(0, 0, -10, m)}">
     ${rl(14, 80, 0, 32, 'url(#pBrick)')}${rl(14, 80, 0, 32, 'url(#gWallLight)')}${rl(14, 80, 30.5, 32.6, '#eceff2')}
-    ${windowL(19, 75, 9, 27.5, m, { mull: [33, 47, 61], tr: 22.5 })}
+    ${windowL(19, 75, 9, 27.5, m, { mull: [33, 61] })}${rl(19, 33, 22, 23, '#f4f6f8')}${rl(61, 75, 22, 23, '#f4f6f8')}
   </g>`;
   if (m > 0) s += poly([[14, 32.6, -10], [80, 32.6, -10], [80, 32.6, 0], [14, 32.6, 0]], '#e2e6ea', m);
   if (m < 0) return s;
@@ -202,12 +202,12 @@ function house(m) {
   </g>`;
   s += seg(rpt(-3, LS), rpt(HD + 3, LS), m, '#9aa2ab', 1.6, 'stroke-linecap="round"');
 
-  // chimney (above the dormer, near the ridge)
+  // chimney on the ridge, above the dormer
   const cy = (x) => HE + PITCH * x;
-  s += poly([[35, cy(35), 62], [35, cy(35), 70], [35, 128, 70], [35, 128, 62]], '#4a2119', m);
-  s += poly([[35, cy(35), 62], [44, cy(44), 62], [44, 128, 62], [35, 128, 62]], '#6e3022', m);
-  s += poly([[34, 128, 61], [45, 128, 61], [45, 128, 71], [34, 128, 71]], '#b8bec6', m);
-  s += poly([[34, 128, 61], [45, 128, 61], [45, 126.5, 61], [34, 126.5, 61]], '#8b929b', m);
+  s += poly([[42, cy(42), 60], [42, cy(42), 72], [42, 122, 72], [42, 122, 60]], '#4a2119', m);
+  s += poly([[42, cy(42), 60], [HW / 2, HR, 60], [52, HR - PITCH * (52 - HW / 2), 60], [52, 122, 60], [42, 122, 60]], '#6e3022', m);
+  s += poly([[41, 122, 59], [53, 122, 59], [53, 122, 73], [41, 122, 73]], '#b8bec6', m);
+  s += poly([[41, 122, 59], [53, 122, 59], [53, 120.5, 59], [41, 120.5, 59]], '#8b929b', m);
 
   // dormer
   const dz0 = 52, dz1 = 80, dx = 12, dt = 92, dxr = (dt - HE) / PITCH;
@@ -256,18 +256,18 @@ function garage(m) {
 }
 
 // Marstek Venus E (black, rounded, on small feet), standing against the right garage wall, drawn ~1.5x size
-function battery(m) {
-  const x0 = -3.6, z0 = 84, z1 = 92, y0 = 0.7, y1 = 12;
+function battery(m, dz = 0) {
+  const x0 = -3.6, z0 = 84 + dz, z1 = 92 + dz, y0 = 0.7, y1 = 12;
   let s = '';
   [z0 + 0.8, z1 - 1.4].forEach((z) => { s += box(x0 + 0.6, x0 + 1.4, y0, z, z + 0.6, '#0b0c0e', '#0b0c0e', '#0b0c0e', m, 0); });
   s += box(x0, 0, y1, z0, z1, '#24272c', '#16181c', '#33363c', m, y0);
   s += `<g transform="${frameZ(x0 - 0.04, 0, 0, m)}">
     <rect x="${z0 + 0.15}" y="${-y1 + 0.1}" width="${z1 - z0 - 0.3}" height="${y1 - y0 - 0.2}" rx=".9" fill="url(#gVenus)"/>
     ${rl(z0 + 0.2, z1 - 0.2, 8.1, 8.3, '#9aa0a8')}
-    <rect x="${BAT.z0}" y="${-(BAT.y0 + BAT.h)}" width="${BAT.z1 - BAT.z0}" height="${BAT.h}" fill="#3a3f46"/>
-    ${[86.1, 87.1, 88.9, 89.9].map((z) => `<circle cx="${z}" cy="-11.1" r=".14" fill="#dfe5ec"/>`).join('')}
+    <rect x="${BAT.z0 + dz}" y="${-(BAT.y0 + BAT.h)}" width="${BAT.z1 - BAT.z0}" height="${BAT.h}" fill="#3a3f46"/>
+    ${[86.1, 87.1, 88.9, 89.9].map((z) => `<circle cx="${z + dz}" cy="-11.1" r=".14" fill="#dfe5ec"/>`).join('')}
   </g>`;
-  s += `<polygon class="socbar" points="" fill="#4ade80"/>`;
+  s += `<polygon class="socbar" data-m="${m}" data-dz="${dz}" points="" fill="#4ade80"/>`;
   return s;
 }
 
@@ -354,7 +354,7 @@ function car(m) {
   return s;
 }
 
-const solids = (m) => tower(m) + house(m) + garage(m) + heatpump(m) + battery(m) + wallbox(m) + car(m);
+const solids = (m) => tower(m) + house(m) + garage(m) + heatpump(m) + battery(m, 12) + battery(m) + wallbox(m) + car(m);
 
 function shadows() {
   const fp = (x0, x1, z0, z1) => `<polygon points="${pts([[x0, 0, z0], [x1, 0, z0], [x1, 0, z1], [x0, 0, z1]], 1)}"/>`;
@@ -566,7 +566,7 @@ function sceneSVG(colors) {
   <g fill="transparent">
     <polygon class="device" data-key="home" points="${pts([[0, 0, HD], [0, 0, -10], [HW, 0, -10], [HW, HE, 0], [HW / 2, HR, 0], [HW / 2, HR, HD], [0, HE, HD]], 1)}"/>
     <polygon class="device" data-key="solar" points="${pts([rpt(PANELS.groups[0], PANELS.v0), rpt(PANELS.groups[1] + PANELS.cols * PANELS.cw, PANELS.v0), rpt(PANELS.groups[1] + PANELS.cols * PANELS.cw, PANELS.v0 + PANELS.rows * PANELS.rh), rpt(PANELS.groups[0], PANELS.v0 + PANELS.rows * PANELS.rh)], 1)}"/>
-    <polygon class="device" data-key="battery" points="${hull(-3.6, 0, 0, 12, 84, 92)}"/>
+    <polygon class="device" data-key="battery" points="${hull(-3.6, 0, 0, 12, 84, 104)}"/>
     <polygon class="device" data-key="heatpump" points="${hull(-8, 0, GAR.h, GAR.h + 12, 88, 104)}"/>
     <polygon class="device" data-key="ev" points="${hull(-30, -10, 0, 17, 6, 53)}"/>
     <polygon class="device" data-key="grid" points="${hull(141, 159, 0, 84, 11, 29)}"/>
@@ -782,9 +782,9 @@ class HomeEnergySceneCard extends HTMLElement {
     const soc = v.battery_soc;
     const sw = soc == null ? 0 : ((BAT.z1 - BAT.z0) * clamp(soc, 0, 100)) / 100;
     const socCol = soc == null ? '#4ade80' : soc < 20 ? '#ef4444' : soc < 50 ? '#f59e0b' : '#4ade80';
-    $$('.socbar').forEach((bar, i) => {
-      const m = i === 0 ? -1 : 1; // the mirror image is first in the document
-      bar.setAttribute('points', pts([[BAT.x, BAT.y0, BAT.z0], [BAT.x, BAT.y0, BAT.z0 + sw], [BAT.x, BAT.y0 + BAT.h, BAT.z0 + sw], [BAT.x, BAT.y0 + BAT.h, BAT.z0]], m));
+    $$('.socbar').forEach((bar) => {
+      const m = +bar.dataset.m, dz = +bar.dataset.dz;
+      bar.setAttribute('points', pts([[BAT.x, BAT.y0, BAT.z0 + dz], [BAT.x, BAT.y0, BAT.z0 + dz + sw], [BAT.x, BAT.y0 + BAT.h, BAT.z0 + dz + sw], [BAT.x, BAT.y0 + BAT.h, BAT.z0 + dz]], m));
       bar.setAttribute('fill', socCol);
     });
 
