@@ -4,7 +4,7 @@
  * with solar roof, home battery, EV, heat pump and grid connection on a glossy floor.
  * Power lines pulse when energy flows; backdrop and lighting follow the time of day.
  */
-const HESC_VERSION = '3.2.0';
+const HESC_VERSION = '3.3.0';
 
 const I18N = {
   en: {
@@ -30,9 +30,10 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 
 // ------------------------------------------------------------ projection --
 // World: x runs along the front of the house, z into the depth, y up.
-const VB_W = 400, VB_H = 285, OX = 58, OY = 196;
-const AX = [0.97, 0.16], BZ = [0.55, -0.36];
-const P = (x, y, z, m = 1) => [OX + AX[0] * x + BZ[0] * z, OY + AX[1] * x + BZ[1] * z - m * y];
+const VB_W = 400, VB_H = 285, OX = 190, OY = 232, K = 1.05;
+// camera looks at the front-left corner of the house: +x along the street facade, +z away from the street
+const AX = [0.93 * K, -0.12 * K], BZ = [-0.62 * K, -0.3 * K];
+const P = (x, y, z, m = 1) => [OX + AX[0] * x + BZ[0] * z, OY + AX[1] * x + BZ[1] * z - m * K * y];
 const pts = (arr, m) => arr.map(([x, y, z]) => P(x, y, z, m).map((n) => n.toFixed(1)).join(',')).join(' ');
 const poly = (arr, fill, m, extra = '') =>
   `<polygon points="${pts(arr, m)}" fill="${fill}" stroke="${fill}" stroke-width=".5" stroke-linejoin="round" ${extra}/>`;
@@ -40,38 +41,50 @@ const seg = (a, b, m, stroke, w, extra = '') => {
   const p = P(...a, m), q = P(...b, m);
   return `<line x1="${p[0].toFixed(1)}" y1="${p[1].toFixed(1)}" x2="${q[0].toFixed(1)}" y2="${q[1].toFixed(1)}" stroke="${stroke}" stroke-width="${w}" ${extra}/>`;
 };
-// local 2D frames: a wall facing the viewer (x/y plane) and a wall facing right (z/y plane)
-const frameX = (x, y, z, m) => { const p = P(x, y, z, m); return `matrix(${AX[0]},${AX[1]},0,${m},${p[0].toFixed(2)},${p[1].toFixed(2)})`; };
-const frameZ = (x, y, z, m) => { const p = P(x, y, z, m); return `matrix(${BZ[0]},${BZ[1]},0,${m},${p[0].toFixed(2)},${p[1].toFixed(2)})`; };
-const box = (x0, x1, h, z0, z1, cf, cs, ct, m) =>
-  poly([[x0, 0, z0], [x1, 0, z0], [x1, h, z0], [x0, h, z0]], cf, m) +
-  poly([[x1, 0, z0], [x1, 0, z1], [x1, h, z1], [x1, h, z0]], cs, m) +
+// local 2D frames (u = world x or z, v = -y): a wall facing the street (x/y plane) and a wall facing left (z/y plane)
+const frameX = (x, y, z, m) => { const p = P(x, y, z, m); return `matrix(${AX[0]},${AX[1]},0,${m * K},${p[0].toFixed(2)},${p[1].toFixed(2)})`; };
+const frameZ = (x, y, z, m) => { const p = P(x, y, z, m); return `matrix(${BZ[0]},${BZ[1]},0,${m * K},${p[0].toFixed(2)},${p[1].toFixed(2)})`; };
+const rl = (u0, u1, y0, y1, fill, extra = '') =>
+  `<rect x="${u0}" y="${-y1}" width="${+(u1 - u0).toFixed(2)}" height="${+(y1 - y0).toFixed(2)}" fill="${fill}" ${extra}/>`;
+// visible faces from this viewpoint: front (z0), left (x0) and top
+const box = (x0, x1, h, z0, z1, cf, cl, ct, m, y0 = 0) =>
+  poly([[x0, y0, z0], [x1, y0, z0], [x1, h, z0], [x0, h, z0]], cf, m) +
+  poly([[x0, y0, z0], [x0, y0, z1], [x0, h, z1], [x0, h, z0]], cl, m) +
   (m > 0 ? poly([[x0, h, z0], [x1, h, z0], [x1, h, z1], [x0, h, z1]], ct, m) : '');
+// screen silhouette of a box (for click targets)
+const hull = (x0, x1, y0, y1, z0, z1) => pts([[x0, y0, z1], [x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]], 1);
 
-// house dimensions
-const W = 180, D = 84, H = 64, R = 46;
-const slope = (x, t) => [x, H + R * t, (D / 2) * t];          // front roof plane
-const bslope = (x, t) => [x, H + R * t, D - (D / 2) * t];     // back roof plane
-const BAT = { x0: 5.5, x1: 10.5, y0: 6, h: 25, z: -14 };     // state-of-charge bar on the battery
+// house: gable facing the street, ridge running back, garage on the left (1 unit ≈ 9 cm)
+const HW = 94, HD = 110, HE = 56, HR = 112, OV = 4;
+const PITCH = (HR - HE) / (HW / 2);
+const LS = Math.hypot(HW / 2 + OV, HR - HE + OV * PITCH);                 // left roof plane, eave to ridge
+const rpt = (z, v) => { const t = 1 - v / LS; return [-OV + (HW / 2 + OV) * t, HE - OV * PITCH + (HR - HE + OV * PITCH) * t, z]; };
+const frameRoof = (m) => {
+  const p = P(HW / 2, HR, 0, m), dx = HW / 2 + OV, dy = HR - HE + OV * PITCH;
+  return `matrix(${BZ[0]},${BZ[1]},${((-AX[0] * dx) / LS).toFixed(4)},${((-AX[1] * dx + m * K * dy) / LS).toFixed(4)},${p[0].toFixed(2)},${p[1].toFixed(2)})`;
+};
+const GAR = { x0: -60, x1: 0, z0: 74, z1: 122, h: 34, d0: -35, d1: -6, dh: 22.2 };   // d0..d1 = open door
+const PANELS = { groups: [6, 79], cols: 2, cw: 12.4, v0: 9, rows: 2, rh: 20.5 };   // 2x2 panels in front of and behind the dormer
+const BAT = { x: -3.65, z0: 85.6, z1: 90.4, y0: 10.15, h: 0.45 };   // LED charge bar on the battery (Marstek Venus E, inside the garage)
 
-const HUB = [104, 0, -44];
+const HUB = [-44, 0, -22];
 const FLOWS = [
-  { key: 'solar', w: [[109, 0, -44], [109, 0, 0], [109, 64, 0], [109, 87, 21]] },
-  { key: 'home', w: [[99, 0, -44], [99, 0, -20], [56, 0, -20], [56, 0, 0], [56, 8, 0]] },
-  { key: 'heatpump', w: [[104, 0, -44], [147, 0, -44], [147, 0, -20]] },
-  { key: 'battery', w: [[97, 0, -44], [97, 0, -31], [8, 0, -31], [8, 0, -14]] },
-  { key: 'ev', w: [[100, 0, -44], [100, 0, -72], [204.5, 0, -72], [204.5, 0, -37]] },
-  { key: 'grid', w: [[104, 0, -44], [-16, 0, -44], [-16, 0, -36]] },
+  { key: 'solar', w: [[-40, 0, -26], [-40, 0, -34], [6, 0, -34], [6, 0, -0.5], [6, 53, -0.5], [-0.5, 53, 1], [-0.5, 53, 18.4], rpt(18.4, 50)] },
+  { key: 'home', w: [[-47, 0, -26], [-47, 0, -46], [44, 0, -46], [44, 0, -10.5], [44, 4, -10.5]] },
+  { key: 'heatpump', w: [[-44, 0, -18], [-44, 0, 73.5], [-44, 34, 73.5], [-44, 34, 76], [-14, 34, 76], [-14, 34, 96], [-8.5, 34, 96]] },
+  { key: 'battery', w: [[-40, 0, -20], [-31, 0, -20], [-31, 0, 80], [-6, 0, 80], [-6, 0, 88]] },
+  { key: 'ev', w: [[-40, 0, -22], [-4, 0, -22], [-4, 0, 36], [-0.5, 0, 36], [-0.5, 13.5, 36]] },
+  { key: 'grid', w: [[-54, 0, -24], [-54, 0, -58], [150, 0, -58], [150, 0, 10.5]] },
 ];
 
-// label = text centre on screen (kept on dark surfaces: roof, garage roof, floor); anchor = world point the dotted leader runs to
+// label = text centre on screen (kept on dark surfaces); anchor = world point the dotted leader runs to
 const LABELS = {
-  grid: { at: [30, 243], anchor: [-16, 0, -30] },
-  home: { at: [97, 100], anchor: [40, 44, 0] },
-  solar: { at: [140, 124], anchor: [83, 66, 3] },
-  heatpump: { at: [200, 104], anchor: [154, 26, -13] },
-  battery: { at: [86, 245], anchor: [12, 2, -14] },
-  ev: { at: [292, 170], anchor: [246, 15, -8.5] },
+  grid: { at: [358, 196], anchor: [150, 0, 10.5] },
+  home: { at: [266, 170], anchor: [79, 37, 0] },
+  solar: { at: [153, 94], anchor: rpt(91.4, 22) },
+  heatpump: { at: [94, 171.5], anchor: [-8, 40, 93], row: true },
+  battery: { at: [50, 250], anchor: [-3.6, 9, 88] },
+  ev: { at: [114, 250], anchor: [-28, 12, 6] },
 };
 
 // elevation, backdrop top, backdrop horizon, studio glow, floor far, floor near
@@ -122,82 +135,156 @@ function flowPath(w, r = 4) {
 
 // --------------------------------------------------------------- objects --
 
+// a white-framed window in a local wall frame, with warm night light
+function windowL(u0, u1, y0, y1, m, { mull = [], tr = null, sill = true } = {}) {
+  const f = 1.1;
+  let s = '';
+  if (sill) s += rl(u0 - 0.8, u1 + 0.8, y0 - 1.3, y0, '#d9dde2');
+  s += rl(u0, u1, y0, y1, '#f4f6f8');
+  s += rl(u0 + f, u1 - f, y0 + f, y1 - f, 'url(#gWin)');
+  s += `<g class="winwarm">${rl(u0 + f, u1 - f, y0 + f, y1 - f, 'url(#gWinWarm)')}</g>`;
+  if (m > 0) s += `<polygon class="shine" points="${u0 + f},${-(y0 + (y1 - y0) * 0.55)} ${u0 + f + (u1 - u0) * 0.25},${-(y1 - f)} ${u0 + f + (u1 - u0) * 0.38},${-(y1 - f)} ${u0 + f},${-(y0 + (y1 - y0) * 0.3)}" fill="#fff" opacity=".16"/>`;
+  mull.forEach((u) => { s += rl(u - 0.6, u + 0.6, y0, y1, '#f4f6f8'); });
+  if (tr != null) s += rl(u0, u1, tr - 0.5, tr + 0.5, '#f4f6f8');
+  return s;
+}
+
 function house(m) {
   let s = '';
-  s += poly([[0, 0, 0], [W, 0, 0], [W, H, 0], [0, H, 0]], 'url(#gFront)', m);
-  s += poly([[W, 0, 0], [W, 0, D], [W, H, D], [W, H + R, D / 2], [W, H, 0]], 'url(#gSide)', m);
-  // big living-room window
-  s += poly([[18, 6, 0], [94, 6, 0], [94, 44, 0], [18, 44, 0]], '#1c2027', m);
-  s += poly([[20, 8, 0], [92, 8, 0], [92, 42, 0], [20, 42, 0]], 'url(#gWin)', m);
-  s += `<g class="winwarm">${poly([[20, 8, 0], [92, 8, 0], [92, 42, 0], [20, 42, 0]], 'url(#gWinWarm)', m)}
-    ${poly([[58, 8, 0], [84, 8, 0], [84, 16, 0], [58, 16, 0]], '#d99a4e', m, 'opacity=".45"')}
-    ${poly([[28, 8, 0], [29.2, 8, 0], [29.2, 27, 0], [28, 27, 0]], '#8a5a2a', m, 'opacity=".6"')}
-    ${poly([[24, 27, 0], [33, 27, 0], [31, 33, 0], [26, 33, 0]], '#ffffff', m, 'opacity=".85"')}</g>`;
-  if (m > 0) s += poly([[21, 30, 0], [33, 42, 0], [41, 42, 0], [21, 22, 0]], '#ffffff', m, 'class="shine" opacity=".16"');
-  [44, 68].forEach((x) => { s += poly([[x - 0.9, 8, 0], [x + 0.9, 8, 0], [x + 0.9, 42, 0], [x - 0.9, 42, 0]], '#1c2027', m); });
-  s += poly([[16, 4.5, 0], [96, 4.5, 0], [96, 6, 0], [16, 6, 0]], '#c9cfd7', m);
+  // left side wall (faces the driveway)
+  s += `<g transform="${frameZ(0, 0, 0, m)}">
+    ${rl(0, HD, 0, HE, 'url(#pBrick)')}${rl(0, HD, 0, HE, '#000', 'opacity=".2"')}
+    ${windowL(5, 17, 8, 31, m, { tr: 24 })}
+    ${windowL(53, 59.5, 38, 47, m, { sill: false })}
+    ${rl(59.3, 73.8, 0, 27.2, '#f4f6f8')}
+    ${rl(60.3, 69.4, 0, 26.2, 'url(#gDoor)')}
+    ${rl(67.4, 67.9, 7, 21, '#eef1f4')}
+    ${rl(70.4, 72.8, 1, 26.2, 'url(#gWin)')}<g class="winwarm">${rl(70.4, 72.8, 1, 26.2, 'url(#gWinWarm)')}</g>
+    ${rl(56.6, 58.2, 22, 26.5, '#16181c')}<g class="winwarm">${rl(56.8, 58, 22.3, 22.9, '#ffe7ab')}</g>
+    ${rl(1.3, 2.5, 0, HE - 1, '#aeb5bd')}
+  </g>`;
+  // street gable
+  s += `<g transform="${frameX(0, 0, 0, m)}">
+    <polygon points="0,0 ${HW},0 ${HW},${-HE} ${HW / 2},${-HR} 0,${-HE}" fill="url(#pBrick)"/>
+    <polygon points="0,0 ${HW},0 ${HW},${-HE} ${HW / 2},${-HR} 0,${-HE}" fill="url(#gWallLight)"/>
+    ${rl(29, 65, 39, 41, '#d9dde2')}${windowL(30, 64, 41, 58, m, { sill: false })}
+    ${rl(30, 64, 44, 58.5, 'url(#pShutter)')}${rl(29, 65, 57.5, 60.5, '#3b4048')}
+    ${windowL(42.5, 50.5, 74, 97, m)}
+  </g>`;
+  // bay window volume
+  s += `<g transform="${frameZ(14, 0, 0, m)}">${rl(-10, 0, 0, 32, 'url(#pBrick)')}${rl(-10, 0, 0, 32, '#000', 'opacity=".2"')}${rl(-10, 0, 30.5, 32.6, '#c4cad1')}</g>`;
+  s += `<g transform="${frameX(0, 0, -10, m)}">
+    ${rl(14, 80, 0, 32, 'url(#pBrick)')}${rl(14, 80, 0, 32, 'url(#gWallLight)')}${rl(14, 80, 30.5, 32.6, '#eceff2')}
+    ${windowL(19, 75, 9, 27.5, m, { mull: [33, 47, 61], tr: 22.5 })}
+  </g>`;
+  if (m > 0) s += poly([[14, 32.6, -10], [80, 32.6, -10], [80, 32.6, 0], [14, 32.6, 0]], '#e2e6ea', m);
   if (m < 0) return s;
 
-  // roof: eave + edges, then the black front plane with panels
-  const e = -0.1, o = 6;
-  const dn = (p) => [p[0], p[1] - 3.2, p[2]];
-  s += poly([bslope(W + o, 1), bslope(W + o, e), dn(bslope(W + o, e)), dn(bslope(W + o, 1))], '#07080b', m);
-  s += poly([slope(-o, e), slope(W + o, e), slope(W + o, 1), slope(-o, 1)], 'url(#gRoof)', m);
-  s += poly([slope(-o, e), slope(W + o, e), dn(slope(W + o, e)), dn(slope(-o, e))], '#2b2f38', m);
-  s += poly([slope(W + o, e), slope(W + o, 1), dn(slope(W + o, 1)), dn(slope(W + o, e))], '#07080b', m);
-  s += seg(slope(-o, 1), slope(W + o, 1), m, '#4a505c', 0.9);
-  const cols = 6, rows = 2, x0 = 8, x1 = 172, t0 = 0.07, t1 = 0.93, gx = 1.3, gt = 0.018;
-  for (let r = 0; r < rows; r++) {
+  // left roof plane with tiles and solar panels
+  const { groups, cols, cw, v0, rows, rh } = PANELS;
+  let pv = '';
+  for (const u0 of groups) for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      const a = x0 + ((x1 - x0) * c) / cols + gx, b = x0 + ((x1 - x0) * (c + 1)) / cols - gx;
-      const p = t0 + ((t1 - t0) * r) / rows + gt, q = t0 + ((t1 - t0) * (r + 1)) / rows - gt;
-      s += `<polygon points="${pts([slope(a, p), slope(b, p), slope(b, q), slope(a, q)], m)}" fill="url(#gPanel)" stroke="#4d5a70" stroke-width=".55" stroke-linejoin="round"/>`;
-      let grid = '';
-      for (let i = 1; i < 3; i++) { const x = a + ((b - a) * i) / 3; grid += seg(slope(x, p), slope(x, q), m, '#8fa3c4', 0.25); }
-      for (let i = 1; i < 4; i++) { const t = p + ((q - p) * i) / 4; grid += seg(slope(a, t), slope(b, t), m, '#8fa3c4', 0.25); }
-      s += `<g opacity=".3">${grid}</g>`;
+      const a = u0 + c * cw + 0.5, v = v0 + r * rh + 0.5, w = cw - 1, h = rh - 1;
+      pv += `<rect x="${a}" y="${v}" width="${w}" height="${h}" fill="url(#gPanel)" stroke="#4d5a70" stroke-width=".45"/>`;
+      let g = '';
+      for (let i = 1; i < 3; i++) g += `<path d="M${a + (w * i) / 3} ${v}v${h}" />`;
+      for (let i = 1; i < 6; i++) g += `<path d="M${a} ${v + (h * i) / 6}h${w}" />`;
+      pv += `<g stroke="#8fa3c4" stroke-width=".18" opacity=".35">${g}</g>`;
     }
   }
-  s += `<polygon class="sheen" points="${pts([slope(x0, t0), slope(x1, t0), slope(x1, t1), slope(x0, t1)], m)}" fill="url(#gSheen)"/>`;
+  s += `<g transform="${frameRoof(m)}">
+    <rect x="-3" y="0" width="${HD + 6}" height="${LS}" fill="url(#pTiles)"/>
+    <rect x="-3" y="0" width="${HD + 6}" height="${LS}" fill="url(#gRoofShade)"/>
+    <rect x="-3" y="-1.2" width="${HD + 6}" height="2.6" fill="#16171a"/>
+    ${pv}
+    ${groups.map((u0) => `<rect class="sheen" x="${u0}" y="${v0}" width="${cols * cw}" height="${rows * rh}" fill="url(#gSheen)"/>`).join('')}
+  </g>`;
+  s += seg(rpt(-3, LS), rpt(HD + 3, LS), m, '#9aa2ab', 1.6, 'stroke-linecap="round"');
+
+  // chimney (above the dormer, near the ridge)
+  const cy = (x) => HE + PITCH * x;
+  s += poly([[35, cy(35), 51], [35, cy(35), 59], [35, 128, 59], [35, 128, 51]], '#4a2119', m);
+  s += poly([[35, cy(35), 51], [44, cy(44), 51], [44, 128, 51], [35, 128, 51]], '#6e3022', m);
+  s += poly([[34, 128, 50], [45, 128, 50], [45, 128, 60], [34, 128, 60]], '#b8bec6', m);
+  s += poly([[34, 128, 50], [45, 128, 50], [45, 126.5, 50], [34, 126.5, 50]], '#8b929b', m);
+
+  // dormer
+  const dz0 = 41, dz1 = 69, dx = 12, dt = 92, dxr = (dt - HE) / PITCH;
+  s += poly([[dx, cy(dx), dz0], [dxr, dt, dz0], [dx, dt, dz0]], '#b9c0c8', m);
+  s += `<g transform="${frameZ(dx, 0, 0, m)}">
+    <polygon points="${dz0},${-cy(dx)} ${dz1},${-cy(dx)} ${dz1},${-dt} ${dz0},${-dt}" fill="url(#gDormer)"/>
+    ${windowL(44, 54.5, 73, 89.5, m, { sill: false })}${windowL(55.5, 66, 73, 89.5, m, { sill: false })}
+  </g>`;
+  s += poly([[dx - 3, dt, dz0 - 1.5], [dxr + 1, dt, dz0 - 1.5], [dxr + 1, dt, dz1 + 1.5], [dx - 3, dt, dz1 + 1.5]], '#dfe3e8', m);
+  s += poly([[dx - 3, dt, dz0 - 1.5], [dx - 3, dt, dz1 + 1.5], [dx - 3, dt - 3, dz1 + 1.5], [dx - 3, dt - 3, dz0 - 1.5]], '#c3c9d0', m);
+  s += poly([[dx - 3, dt, dz0 - 1.5], [dxr + 1, dt, dz0 - 1.5], [dxr + 1, dt - 3, dz0 - 1.5], [dx - 3, dt - 3, dz0 - 1.5]], '#e9ecef', m);
+
+  // verges on the street gable
+  const vz = -3, dn = (p) => [p[0], p[1] - 3.4, p[2]];
+  const L0 = [-OV, HE - OV * PITCH, vz], top = [HW / 2, HR + 1.5, vz], R0 = [HW + OV, HE - OV * PITCH, vz];
+  s += poly([L0, top, dn(top), dn(L0)], '#1b1c20', m);
+  s += poly([top, R0, dn(R0), dn(top)], '#26272c', m);
+  s += seg(L0, top, m, '#cfd4da', 1.1, 'stroke-linecap="round"') + seg(top, R0, m, '#cfd4da', 1.1, 'stroke-linecap="round"');
+
   return s;
 }
 
 function garage(m) {
-  const x0 = W, x1 = 276, z0 = 20, z1 = D, h = 40;
+  const { x0, x1, z0, z1, h, d0, d1, dh } = GAR;
   let s = '';
-  s += poly([[x0, 0, z0], [x1, 0, z0], [x1, h, z0], [x0, h, z0]], 'url(#gFront)', m);
-  s += poly([[x1, 0, z0], [x1, 0, z1], [x1, h, z1], [x1, h, z0]], 'url(#gSide)', m);
-  s += poly([[198, 0, z0], [262, 0, z0], [262, 31, z0], [198, 31, z0]], 'url(#gGarage)', m);
-  s += `<g class="garagewarm">${poly([[198, 0, z0], [262, 0, z0], [262, 31, z0], [198, 31, z0]], 'url(#gGarageWarm)', m)}</g>`;
+  // interior seen through the open doors: white walls, concrete floor, warm light at night
+  s += poly([[d0, 0, z0], [x1, 0, z0], [x1, 0, z1], [d0, 0, z1]], '#80868d', m);
+  s += poly([[x0, 0, z1], [x1, 0, z1], [x1, h, z1], [x0, h, z1]], '#d5dae0', m);
+  s += poly([[x1, 0, z0], [x1, 0, z1], [x1, h, z1], [x1, h, z0]], '#eef1f4', m);
+  s += `<g class="garagewarm">${poly([[x0, 0, z1], [x1, 0, z1], [x1, h, z1], [x0, h, z1]], 'url(#gGarageWarm)', m)}${poly([[x1, 0, z0], [x1, 0, z1], [x1, h, z1], [x1, h, z0]], 'url(#gGarageWarm)', m)}</g>`;
+  // outside walls
+  s += `<g transform="${frameZ(x0, 0, 0, m)}">${rl(z0, z1, 0, h, 'url(#pWood)')}${rl(z0, z1, 0, h, '#000', 'opacity=".3"')}</g>`;
+  s += poly([[d1, 0, z0], [d1, 0, z0 + 2], [d1, dh, z0 + 2], [d1, dh, z0]], '#6b4626', m);
+  const hole = `M${x0} 0H${x1}V${-h}H${x0}ZM${d0} 0V${-dh}H${d1}V0Z`;
+  s += `<g transform="${frameX(0, 0, z0, m)}">
+    <path d="${hole}" fill="url(#pWood)" fill-rule="evenodd"/><path d="${hole}" fill="url(#gWallLight)" fill-rule="evenodd"/>
+    ${rl(x0, x1, 22.2, 23, '#c9cfd6')}${rl(d0 - 0.5, d0, 0, dh, '#4a2f18')}
+    ${rl(x0 + 4, x0 + 6, 28, 29.6, '#eef1f4')}
+  </g>`;
   if (m > 0) {
-    s += poly([[x0, h, z0], [x1, h, z0], [x1, h, z1], [x0, h, z1]], '#14171c', m);
-    s += poly([[x0, h - 4, z0], [x1, h - 4, z0], [x1, h, z0], [x0, h, z0]], '#262a32', m);
-    s += poly([[x1, h - 4, z0], [x1, h - 4, z1], [x1, h, z1], [x1, h, z0]], '#0d0f13', m);
+    s += poly([[x0, h, z0], [x1, h, z0], [x1, h, z1], [x0, h, z1]], '#1d2026', m);
+    s += poly([[x0, h, z0], [x1, h, z0], [x1, h - 1.6, z0], [x0, h - 1.6, z0]], '#c9cfd6', m);
+    s += poly([[x0, h, z0], [x0, h, z1], [x0, h - 1.6, z1], [x0, h - 1.6, z0]], '#8f97a1', m);
   }
   return s;
 }
 
+// Marstek Venus E (black, rounded, on small feet), standing against the right garage wall, drawn ~1.5x size
 function battery(m) {
-  let s = box(1, 15, 36, -14, 0, 'url(#gBattF)', '#101216', '#3a404a', m);
-  s += poly([[BAT.x0, BAT.y0, BAT.z], [BAT.x1, BAT.y0, BAT.z], [BAT.x1, BAT.y0 + BAT.h, BAT.z], [BAT.x0, BAT.y0 + BAT.h, BAT.z]], '#06080b', m);
+  const x0 = -3.6, z0 = 84, z1 = 92, y0 = 0.7, y1 = 12;
+  let s = '';
+  [z0 + 0.8, z1 - 1.4].forEach((z) => { s += box(x0 + 0.6, x0 + 1.4, y0, z, z + 0.6, '#0b0c0e', '#0b0c0e', '#0b0c0e', m, 0); });
+  s += box(x0, 0, y1, z0, z1, '#24272c', '#16181c', '#33363c', m, y0);
+  s += `<g transform="${frameZ(x0 - 0.04, 0, 0, m)}">
+    <rect x="${z0 + 0.15}" y="${-y1 + 0.1}" width="${z1 - z0 - 0.3}" height="${y1 - y0 - 0.2}" rx=".9" fill="url(#gVenus)"/>
+    ${rl(z0 + 0.2, z1 - 0.2, 8.1, 8.3, '#9aa0a8')}
+    <rect x="${BAT.z0}" y="${-(BAT.y0 + BAT.h)}" width="${BAT.z1 - BAT.z0}" height="${BAT.h}" fill="#3a3f46"/>
+    ${[86.1, 87.1, 88.9, 89.9].map((z) => `<circle cx="${z}" cy="-11.1" r=".14" fill="#dfe5ec"/>`).join('')}
+  </g>`;
   s += `<polygon class="socbar" points="" fill="#4ade80"/>`;
-  if (m > 0) s += seg([1.6, 1, -14], [1.6, 35, -14], m, '#ffffff', 0.5, 'opacity=".25"');
   return s;
 }
 
 function heatpump(m) {
-  let s = box(128, 166, 26, -20, -6, 'url(#gHp)', '#bfc6cf', '#fbfcfd', m);
-  s += `<g transform="${frameX(141.5, 13, -20, m)}">
+  const y0 = GAR.h;   // on the garage roof, back against the house wall, fan facing the driveway
+  let s = box(-8, 0, y0 + 12, 88, 104, '#bfc6cf', 'url(#gHp)', '#fbfcfd', m, y0);
+  s += `<g transform="${frameZ(-8.05, y0 + 6, 93, m)} scale(.45)">
     <circle r="10" fill="#171b21"/>
     <g class="fan"><ellipse cy="-4.6" rx="2.4" ry="4.6" fill="#8f99a5"/><ellipse cy="-4.6" rx="2.4" ry="4.6" fill="#8f99a5" transform="rotate(120)"/><ellipse cy="-4.6" rx="2.4" ry="4.6" fill="#8f99a5" transform="rotate(240)"/><circle r="1.8" fill="#d5dbe2"/></g>
     <g fill="none" stroke="#4d5662" stroke-width=".6"><circle r="9.6"/><circle r="6.6"/><circle r="3.6"/><path d="M-9.6 0H9.6M0-9.6V9.6"/></g>
   </g>`;
-  for (let y = 7; y <= 20; y += 3.2) s += seg([154, y, -20], [163, y, -20], m, '#a3abb5', 0.7);
+  for (let y = y0 + 2.5; y <= y0 + 10; y += 1.8) s += seg([-8.05, y, 98], [-8.05, y, 102.5], m, '#a3abb5', 0.5);
   return s;
 }
 
 function tower(m) {
-  const cx = -16, cz = -28, steel = '#b9c1cc', cap = 'stroke-linecap="round"';
+  const cx = 150, cz = 20, steel = '#b9c1cc', cap = 'stroke-linecap="round"';
   const hw = (y) => (y <= 58 ? 8.5 - (5.7 * y) / 58 : 2.8 - (1.5 * (y - 58)) / 26);
   // corners: 0 front-left, 1 front-right, 2 back-right, 3 back-left
   const c = (i, y) => { const h = hw(y); return [cx + (i === 1 || i === 2 ? h : -h), y, cz + (i >= 2 ? h : -h)]; };
@@ -211,15 +298,13 @@ function tower(m) {
     return f;
   };
   const leg = (i) => seg(c(i, 0), c(i, 58), m, steel, 1.1, cap) + seg(c(i, 58), c(i, 84), m, steel, 0.9, cap);
-  let s = `<g opacity=".45">${face(2, 3)}${face(3, 0)}${leg(3)}</g>`;
-  s += face(1, 2) + leg(2) + face(0, 1) + leg(0) + leg(1);
-  // cross-arms with insulators and conductors running off towards the viewer
+  let s = `<g opacity=".45">${face(1, 2)}${face(2, 3)}${leg(2)}</g>`;
+  s += face(3, 0) + leg(3) + face(0, 1) + leg(0) + leg(1);
   [[58, 14], [72, 10.5]].forEach(([y, L]) => {
     [-1, 1].forEach((d) => {
       const tip = [cx + d * L, y, cz], h = hw(y), drop = [tip[0], y - 4, cz];
       s += seg([cx + d * h, y, cz - h], tip, m, steel, 0.6, cap) + seg([cx + d * h, y, cz + h], tip, m, steel, 0.6, cap);
       s += seg([cx + d * hw(y + 5), y + 5, cz], tip, m, steel, 0.6, cap);
-      s += seg([cx + d * (h + (L - h) / 2), y, cz], [cx + d * hw(y + 5), y + 5, cz], m, steel, 0.4, cap);
       const wire = [];
       for (let t = 0; t <= 1.001; t += 0.125) wire.push([tip[0], y - 4 - 9 * t * (1.5 - t), cz - 62 * t]);
       s += `<polyline points="${pts(wire, m)}" fill="none" stroke="#6b7482" stroke-width=".45"/>`;
@@ -230,48 +315,51 @@ function tower(m) {
 }
 
 function wallbox(m) {
-  let s = box(202, 207, 24, -37, -33, '#f4f6f8', '#c3cad3', '#ffffff', m);
-  s += poly([[203, 16, -37], [206, 16, -37], [206, 21, -37], [203, 21, -37]], '#1b2130', m);
-  if (m > 0) s += `<g transform="${frameX(204.5, 12, -37, m)}"><circle class="evled" r="1.3" fill="#334155"/></g>`;
+  let s = box(-2.2, 0, 23, 34, 38.5, '#202329', '#121418', '#2c3037', m, 14);
+  if (m > 0) {
+    s += `<g transform="${frameZ(-2.25, 19.5, 36.25, m)}"><circle class="evled" r="1.25" fill="#334155"/></g>`;
+    s += `<path d="M${P(-2.2, 15, 36.5).join(' ')} C${P(-4, 2, 34).join(' ')} ${P(-6, 1, 26).join(' ')} ${P(-6.5, 0.3, 20).join(' ')} S${P(-9, 4, 8).join(' ')} ${P(-10.4, 9.5, 8).join(' ')}" fill="none" stroke="#111318" stroke-width=".9" stroke-linecap="round"/>`;
+  }
   return s;
 }
 
 function car(m) {
-  const x1 = 248, x0 = 218, z0 = -70;
-  const prof = [[0, 4], [0, 9], [2, 11.5], [20, 14], [31, 20.5], [46, 20.5], [58, 15], [63, 14], [64, 9], [64, 4]];
-  const S = (u, y) => [x1, y, z0 + u], B = (u, y) => [x0, y, z0 + u];
-  const cols = ['url(#gCarFront)', '#dfe4ea', '#fafbfc', 'url(#gGlass)', '#f1f4f7', 'url(#gGlass)', '#e9edf1', '#c5ccd5', '#b9c1cb'];
+  const x0 = -30, x1 = -10, z0 = 6;   // parked nose-in towards the garage, rear to the street
+  const prof = [[0, 3], [0, 8.2], [0.6, 11.4], [2.4, 15.3], [22, 16.5], [30.5, 15.6], [36.5, 11.6], [44.5, 9.7], [47, 7.6], [47, 3]];
+  const S = (u, y) => [x0, y, z0 + u], B = (u, y) => [x1, y, z0 + u];
+  const cols = ['url(#gCarRear)', '#121418', 'url(#gGlass)', '#16181c', '#16181c', 'url(#gGlass)', '#a9aeb4', '#979da3', '#848a90'];
   let s = '';
   for (let i = prof.length - 2; i >= 0; i--) {
     const a = prof[i], b = prof[i + 1];
     s += poly([S(...a), S(...b), B(...b), B(...a)], cols[i], m);
   }
-  // nose details
-  s += poly([[x1 - 4, 4.6, z0], [x0 + 4, 4.6, z0], [x0 + 4, 6.6, z0], [x1 - 4, 6.6, z0]], '#1b1f26', m);
-  s += poly([[x1 - 0.6, 9.4, z0 + 0.1], [x1 - 0.6, 11.1, z0 + 1.5], [x1 - 8, 11.1, z0 + 1.5], [x1 - 8, 9.4, z0 + 0.1]], '#fff8dc', m, 'class="headlight"');
-  s += poly([[x0 + 0.6, 9.4, z0 + 0.1], [x0 + 0.6, 11.1, z0 + 1.5], [x0 + 8, 11.1, z0 + 1.5], [x0 + 8, 9.4, z0 + 0.1]], '#fff8dc', m, 'class="headlight"');
+  // rear: light bar and tail lights
+  s += `<g transform="${frameX(x0, 0, z0 + 0.25, m)}">
+    ${rl(0.8, 5.6, 9.1, 10.7, '#ef4444', 'class="taillight"')}${rl(14.4, 19.2, 9.1, 10.7, '#ef4444', 'class="taillight"')}
+    ${rl(5.6, 14.4, 9.6, 10.2, '#7f1d1d')}${rl(0.6, 19.4, 3, 4.3, '#1a1d21')}
+  </g>`;
   // near side
   s += poly(prof.map((p) => S(...p)), 'url(#gCarSide)', m);
-  s += poly([S(3, 4), S(61, 4), S(61, 5.3), S(3, 5.3)], '#8d96a1', m);
-  s += poly([S(22.5, 14.7), S(31.4, 19.6), S(38, 19.6), S(38, 14.7)], 'url(#gGlass)', m);
-  s += poly([S(39.7, 14.7), S(39.7, 19.6), S(45.6, 19.6), S(55.4, 15.1), S(55.4, 14.7)], 'url(#gGlass)', m);
-  s += seg(S(38.9, 14.6), S(38.9, 5.6), m, '#aab2bc', 0.45);
-  s += poly([S(60.8, 13.4), S(63.5, 13), S(63.9, 11), S(60.8, 11.6)], '#ef4444', m);
-  [12, 52].forEach((u) => {
-    s += `<g transform="${frameZ(x1, 6, z0 + u, m)}">
-      <circle r="7.4" fill="#14171c"/><circle r="6.1" fill="#0b0d10"/><circle r="4" fill="#d5dae0"/>
-      <path d="M0 -4V4M-3.8 -1.2L3.8 1.2M-2.4 3.2L2.4 -3.2M-3.8 1.2L3.8 -1.2M-2.4 -3.2L2.4 3.2" stroke="#8b939d" stroke-width=".8"/>
-      <circle r="1.2" fill="#5a626c"/></g>`;
+  s += poly([S(3.2, 11.3), S(2.6, 15), S(22, 16.1), S(30.2, 15.3), S(35.6, 11.6)], '#111318', m);
+  s += poly([S(4.1, 11.9), S(3.7, 14.5), S(15, 15.2), S(15, 11.9)], 'url(#gGlass)', m);
+  s += poly([S(16.1, 11.9), S(16.1, 15.3), S(22, 15.6), S(29.4, 15), S(34.2, 11.9)], 'url(#gGlass)', m);
+  s += poly([S(1.5, 3), S(45.5, 3), S(45.5, 4.4), S(1.5, 4.4)], '#3a3f45', m);
+  s += seg(S(15.6, 4.6), S(15.6, 11.2), m, '#8d949b', 0.4);
+  [9, 38.5].forEach((u) => {
+    s += `<g transform="${frameZ(x0 - 0.1, 4.6, z0 + u, m)} scale(.62)">
+      <circle r="7.4" fill="#14171c"/><circle r="6.1" fill="#0b0d10"/><circle r="4.2" fill="#2a2e34"/>
+      <path d="M0 -4V4M-3.8 -1.2L3.8 1.2M-2.4 3.2L2.4 -3.2M-3.8 1.2L3.8 -1.2M-2.4 -3.2L2.4 3.2" stroke="#545b64" stroke-width=".9"/>
+      <circle r="1.2" fill="#8b939d"/></g>`;
   });
   return s;
 }
 
-const solids = (m) => tower(m) + house(m) + garage(m) + battery(m) + heatpump(m) + car(m) + wallbox(m);
+const solids = (m) => tower(m) + house(m) + garage(m) + heatpump(m) + battery(m) + wallbox(m) + car(m);
 
 function shadows() {
   const fp = (x0, x1, z0, z1) => `<polygon points="${pts([[x0, 0, z0], [x1, 0, z0], [x1, 0, z1], [x0, 0, z1]], 1)}"/>`;
   return `<g fill="#000" opacity=".55" filter="url(#shadow)">
-    ${fp(-6, W + 4, -7, D)}${fp(W, 282, 12, D)}${fp(214, 254, -76, -2)}${fp(125, 170, -25, -4)}${fp(-1, 19, -19, 2)}${fp(-25, -7, -37, -19)}${fp(200, 210, -41, -31)}
+    ${fp(-4, HW + 3, -13, HD + 2)}${fp(-63, 1, 71, 124)}${fp(-32, -8, 3, 55)}${fp(141, 159, 11, 29)}
   </g>`;
 }
 
@@ -369,6 +457,7 @@ ha-card { display: block; overflow: hidden; border: none; background: none; bord
 .lbl { position: absolute; transform: translate(-50%,-50%); text-align: center; white-space: nowrap; cursor: pointer; line-height: 1.15;
   font-size: clamp(8px, 2.35cqw, 12px); text-shadow: 0 1px 6px rgba(0,0,0,.55); transition: opacity .6s; }
 .lbl.hidden { display: none; }
+.lbl.row { font-size: clamp(6.5px, 1.8cqw, 9.5px); line-height: 1.05; }
 .lbl .n { font-size: .92em; color: rgba(255,255,255,.62); }
 .lbl .v { font-size: 1.5em; font-weight: 500; letter-spacing: -.2px; }
 .lbl .v small { font-size: .62em; margin-left: .2em; color: rgba(255,255,255,.85); }
@@ -395,9 +484,9 @@ function sceneSVG(colors) {
     </g>`;
   }).join('');
 
-  const leaders = Object.entries(LABELS).map(([key, { at, anchor }]) => {
+  const leaders = Object.entries(LABELS).map(([key, { at, anchor, row }]) => {
     const a = P(...anchor);
-    return `<line id="leader-${key}" class="leader hidden" x1="${at[0]}" y1="${at[1] + (a[1] > at[1] ? 11 : -11)}" x2="${a[0].toFixed(1)}" y2="${a[1].toFixed(1)}"/>
+    return `<line id="leader-${key}" class="leader hidden" x1="${at[0]}" y1="${at[1] + (a[1] > at[1] ? 1 : -1) * (row ? 7 : 11)}" x2="${a[0].toFixed(1)}" y2="${a[1].toFixed(1)}"/>
       <circle id="ldot-${key}" class="ldot hidden" cx="${a[0].toFixed(1)}" cy="${a[1].toFixed(1)}" r="1.3"/>`;
   }).join('');
 
@@ -420,7 +509,7 @@ function sceneSVG(colors) {
       <stop id="fs0" offset="0" stop-color="#0c1422" stop-opacity="0"/><stop id="fs1" offset=".2" stop-color="#0c1422"/><stop id="fs2" offset="1" stop-color="#05070c"/>
     </linearGradient>
     <radialGradient id="gFloorLight" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#fff" stop-opacity=".16"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
-    <linearGradient id="gRefFade" gradientUnits="userSpaceOnUse" x1="0" y1="196" x2="0" y2="${VB_H}"><stop offset="0" stop-color="#fff"/><stop offset=".75" stop-color="#fff" stop-opacity=".12"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <linearGradient id="gRefFade" gradientUnits="userSpaceOnUse" x1="0" y1="${OY}" x2="0" y2="${VB_H}"><stop offset="0" stop-color="#fff"/><stop offset=".75" stop-color="#fff" stop-opacity=".12"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
     <mask id="refMask" maskUnits="userSpaceOnUse" ${full}><rect ${full} fill="url(#gRefFade)"/></mask>
     <linearGradient id="gFront" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e2e6eb"/></linearGradient>
     <linearGradient id="gSide" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#d9dee5"/><stop offset="1" stop-color="#b4bbc5"/></linearGradient>
@@ -436,13 +525,26 @@ function sceneSVG(colors) {
     <linearGradient id="gGarageWarm" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd58a" stop-opacity=".5"/><stop offset="1" stop-color="#ffb65c" stop-opacity=".12"/></linearGradient>
     <linearGradient id="gBattF" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#3a414c"/><stop offset=".4" stop-color="#22262d"/><stop offset="1" stop-color="#181b20"/></linearGradient>
     <linearGradient id="gHp" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f9fafb"/><stop offset="1" stop-color="#d6dbe1"/></linearGradient>
-    <linearGradient id="gCarSide" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset=".5" stop-color="#eef1f5"/><stop offset="1" stop-color="#b9c1cb"/></linearGradient>
+    <linearGradient id="gCarSide" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b9bec3"/><stop offset=".55" stop-color="#9da3a9"/><stop offset="1" stop-color="#70767c"/></linearGradient>
     <linearGradient id="gCarFront" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e3e7ec"/><stop offset="1" stop-color="#b3bbc5"/></linearGradient>
     <linearGradient id="gGlass" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#46587a"/><stop offset="1" stop-color="#0d121b"/></linearGradient>
     <linearGradient id="gSpill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffc76b" stop-opacity=".75"/><stop offset="1" stop-color="#ffc76b" stop-opacity="0"/></linearGradient>
     <linearGradient id="gBolt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d9f99d"/><stop offset="1" stop-color="#22d3ee"/></linearGradient>
     <radialGradient id="gHub"><stop offset="0" stop-color="#27303f"/><stop offset="1" stop-color="#0a0d13"/></radialGradient>
     <radialGradient id="gWarm"><stop offset="0" stop-color="#ffd27a" stop-opacity=".9"/><stop offset=".4" stop-color="#ffbf5e" stop-opacity=".35"/><stop offset="1" stop-color="#ffb347" stop-opacity="0"/></radialGradient>
+    <pattern id="pBrick" patternUnits="userSpaceOnUse" width="10" height="3.6"><rect width="10" height="3.6" fill="#3b2723"/>
+      <rect x=".15" y=".15" width="4.7" height="1.5" fill="#7b3627"/><rect x="5.15" y=".15" width="4.7" height="1.5" fill="#64291f"/>
+      <rect x="-2.35" y="1.95" width="4.7" height="1.5" fill="#6d2d22"/><rect x="2.65" y="1.95" width="4.7" height="1.5" fill="#86412e"/><rect x="7.65" y="1.95" width="4.7" height="1.5" fill="#6d2d22"/></pattern>
+    <pattern id="pWood" patternUnits="userSpaceOnUse" width="6.8" height="40"><rect width="3.4" height="40" fill="#a8733f"/><rect x="3.4" width="3.4" height="40" fill="#986639"/>
+      <rect width=".22" height="40" fill="#4e3019"/><rect x="3.4" width=".22" height="40" fill="#5a381d"/></pattern>
+    <pattern id="pTiles" patternUnits="userSpaceOnUse" width="4.2" height="3.4"><rect width="4.2" height="3.4" fill="#2e2d31"/><rect y="3" width="4.2" height=".4" fill="#17171a"/><rect width=".25" height="3.4" fill="#202023"/></pattern>
+    <pattern id="pShutter" patternUnits="userSpaceOnUse" width="10" height="1.3"><rect width="10" height="1.3" fill="#7f858d"/><rect y="1.02" width="10" height=".28" fill="#5c6168"/></pattern>
+    <linearGradient id="gWallLight" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".1"/><stop offset="1" stop-color="#000" stop-opacity=".12"/></linearGradient>
+    <linearGradient id="gRoofShade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".07"/><stop offset="1" stop-color="#000" stop-opacity=".18"/></linearGradient>
+    <linearGradient id="gDormer" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#eceef1"/><stop offset="1" stop-color="#ccd1d7"/></linearGradient>
+    <linearGradient id="gDoor" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b8bec5"/><stop offset="1" stop-color="#9aa1a9"/></linearGradient>
+    <linearGradient id="gCarRear" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a6abb1"/><stop offset="1" stop-color="#7b8187"/></linearGradient>
+    <linearGradient id="gVenus" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2c3036"/><stop offset=".5" stop-color="#1a1c20"/><stop offset="1" stop-color="#101114"/></linearGradient>
   </defs>
 
   <!-- glossy studio floor -->
@@ -452,22 +554,22 @@ function sceneSVG(colors) {
 
   <!-- mirror image on the floor -->
   <g mask="url(#refMask)"><g opacity=".42" filter="url(#refblur)"><g filter="url(#daylight)">${solids(-1)}</g></g></g>
-  <polygon id="spill" points="${pts([[20, 0, -1], [92, 0, -1], [104, 0, -46], [6, 0, -46]], 1)}" fill="url(#gSpill)" opacity="0" filter="url(#soft)"/>
+  <polygon id="spill" points="${pts([[20, 0, -10.5], [74, 0, -10.5], [84, 0, -46], [10, 0, -46]], 1)}" fill="url(#gSpill)" opacity="0" filter="url(#soft)"/>
 
   <!-- the model -->
   <g id="exterior" filter="url(#daylight)">${solids(1)}</g>
   <g id="bloom" opacity="0" style="pointer-events:none">
-    <ellipse cx="${P(56, 25, 0)[0].toFixed(1)}" cy="${P(56, 25, 0)[1].toFixed(1)}" rx="62" ry="40" fill="url(#gWarm)" opacity=".5"/>
+    <ellipse cx="${P(47, 16, -10)[0].toFixed(1)}" cy="${P(47, 16, -10)[1].toFixed(1)}" rx="46" ry="30" fill="url(#gWarm)" opacity=".5"/>
   </g>
 
   <!-- click targets -->
   <g fill="transparent">
-    <polygon class="device" data-key="solar" points="${pts([slope(0, 0), slope(W, 0), slope(W, 1), slope(0, 1)], 1)}"/>
-    <polygon class="device" data-key="home" points="${pts([[0, 0, 0], [W, 0, 0], [W, H, 0], [0, H, 0]], 1)}"/>
-    <polygon class="device" data-key="battery" points="${pts([[1, 0, -14], [15, 0, -14], [15, 36, 0], [1, 36, -14]], 1)}"/>
-    <polygon class="device" data-key="heatpump" points="${pts([[128, 0, -20], [166, 0, -20], [166, 26, -6], [128, 26, -20]], 1)}"/>
-    <polygon class="device" data-key="ev" points="${pts([[218, 0, -70], [248, 0, -70], [248, 0, -6], [248, 21, -6], [218, 21, -30]], 1)}"/>
-    <polygon class="device" data-key="grid" points="${pts([[-25, 0, -36], [-7, 0, -36], [-1, 58, -28], [-12, 86, -28], [-20, 86, -28], [-31, 58, -28]], 1)}"/>
+    <polygon class="device" data-key="home" points="${pts([[0, 0, HD], [0, 0, -10], [HW, 0, -10], [HW, HE, 0], [HW / 2, HR, 0], [HW / 2, HR, HD], [0, HE, HD]], 1)}"/>
+    <polygon class="device" data-key="solar" points="${pts([rpt(PANELS.groups[0], PANELS.v0), rpt(PANELS.groups[1] + PANELS.cols * PANELS.cw, PANELS.v0), rpt(PANELS.groups[1] + PANELS.cols * PANELS.cw, PANELS.v0 + PANELS.rows * PANELS.rh), rpt(PANELS.groups[0], PANELS.v0 + PANELS.rows * PANELS.rh)], 1)}"/>
+    <polygon class="device" data-key="battery" points="${hull(-3.6, 0, 0, 12, 84, 92)}"/>
+    <polygon class="device" data-key="heatpump" points="${hull(-8, 0, GAR.h, GAR.h + 12, 88, 104)}"/>
+    <polygon class="device" data-key="ev" points="${hull(-30, -10, 0, 17, 6, 53)}"/>
+    <polygon class="device" data-key="grid" points="${hull(141, 159, 0, 84, 11, 29)}"/>
   </g>
 
   ${leaders}
@@ -484,8 +586,8 @@ function sceneSVG(colors) {
 }
 
 function labelsHTML(colors) {
-  return Object.entries(LABELS).map(([key, { at }]) => `
-    <div id="lbl-${key}" class="lbl hidden" data-key="${key}" style="left:${((at[0] / VB_W) * 100).toFixed(2)}%;top:${((at[1] / VB_H) * 100).toFixed(2)}%;--c:${colors[key]}">
+  return Object.entries(LABELS).map(([key, { at, row }]) => `
+    <div id="lbl-${key}" class="lbl hidden${row ? ' row' : ''}" data-key="${key}" style="left:${((at[0] / VB_W) * 100).toFixed(2)}%;top:${((at[1] / VB_H) * 100).toFixed(2)}%;--c:${colors[key]}">
       <div class="n"></div><div class="v"></div>
     </div>`).join('');
 }
@@ -678,11 +780,11 @@ class HomeEnergySceneCard extends HTMLElement {
     });
 
     const soc = v.battery_soc;
-    const sh = soc == null ? 0 : (BAT.h * clamp(soc, 0, 100)) / 100;
+    const sw = soc == null ? 0 : ((BAT.z1 - BAT.z0) * clamp(soc, 0, 100)) / 100;
     const socCol = soc == null ? '#4ade80' : soc < 20 ? '#ef4444' : soc < 50 ? '#f59e0b' : '#4ade80';
     $$('.socbar').forEach((bar, i) => {
       const m = i === 0 ? -1 : 1; // the mirror image is first in the document
-      bar.setAttribute('points', pts([[BAT.x0, BAT.y0, BAT.z], [BAT.x1, BAT.y0, BAT.z], [BAT.x1, BAT.y0 + sh, BAT.z], [BAT.x0, BAT.y0 + sh, BAT.z]], m));
+      bar.setAttribute('points', pts([[BAT.x, BAT.y0, BAT.z0], [BAT.x, BAT.y0, BAT.z0 + sw], [BAT.x, BAT.y0 + BAT.h, BAT.z0 + sw], [BAT.x, BAT.y0 + BAT.h, BAT.z0]], m));
       bar.setAttribute('fill', socCol);
     });
 

@@ -3,7 +3,7 @@
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories/)
 [![Validate](https://github.com/michielvgrootel/hass-house-energy-flow/actions/workflows/validate.yml/badge.svg)](https://github.com/michielvgrootel/hass-house-energy-flow/actions/workflows/validate.yml)
 
-An animated Home Assistant dashboard card that shows your home as a 3D studio model: a house with a solar roof, a home battery, an EV with charger, a heat pump and a transmission tower for the grid. Glowing power lines run across the floor and pulse in the direction energy is flowing. The backdrop, sun, moon, stars and house lighting follow the real time of day.
+An animated Home Assistant dashboard card that shows your home as a 3D model: a brick house with solar panels on the roof, a garage with the home battery inside and a heat pump on its roof, an EV at the wall charger, and a transmission tower for the grid. Glowing power lines run across the floor and pulse in the direction energy is flowing. The backdrop, sun, moon, stars and house lighting follow the real time of day.
 
 | Day | Night |
 |---|---|
@@ -29,7 +29,7 @@ HACS registers the dashboard resource for you. If you installed the card manuall
 
 1. Copy `home-energy-scene-card.js` to `<config>/www/home-energy-scene-card.js`.
 2. Go to **Settings → Dashboards → ⋮ → Resources → Add resource**:
-   - URL: `/local/home-energy-scene-card.js?v=3.2.0`
+   - URL: `/local/home-energy-scene-card.js?v=3.3.0`
    - Type: **JavaScript module**
 3. Refresh the browser (hard refresh), then add a card of type `custom:home-energy-scene-card`.
 
