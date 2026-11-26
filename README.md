@@ -29,7 +29,7 @@ HACS registers the dashboard resource for you. If you installed the card manuall
 
 1. Copy `home-energy-scene-card.js` to `<config>/www/home-energy-scene-card.js`.
 2. Go to **Settings → Dashboards → ⋮ → Resources → Add resource**:
-   - URL: `/local/home-energy-scene-card.js?v=3.3.3`
+   - URL: `/local/home-energy-scene-card.js?v=3.3.4`
    - Type: **JavaScript module**
 3. Refresh the browser (hard refresh), then add a card of type `custom:home-energy-scene-card`.
 

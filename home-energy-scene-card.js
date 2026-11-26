@@ -4,7 +4,7 @@
  * with solar roof, home battery, EV, heat pump and grid connection on a glossy floor.
  * Power lines pulse when energy flows; backdrop and lighting follow the time of day.
  */
-const HESC_VERSION = '3.3.3';
+const HESC_VERSION = '3.3.4';
 
 const I18N = {
   en: {
@@ -211,14 +211,14 @@ function house(m) {
 
   // dormer
   const dz0 = 52, dz1 = 80, dx = 12, dt = 92, dxr = (dt - HE) / PITCH;
-  s += poly([[dx, cy(dx), dz0], [dxr, dt, dz0], [dx, dt, dz0]], '#b9c0c8', m);
+  s += poly([[dx, cy(dx), dz0], [dxr, dt, dz0], [dx, dt, dz0]], '#a3aab2', m);
   s += `<g transform="${frameZ(dx, 0, 0, m)}">
     <polygon points="${dz0},${-cy(dx)} ${dz1},${-cy(dx)} ${dz1},${-dt} ${dz0},${-dt}" fill="url(#gDormer)"/>
     ${windowL(55, 65.5, 73, 89.5, m, { sill: false })}${windowL(66.5, 77, 73, 89.5, m, { sill: false })}
   </g>`;
-  s += poly([[dx - 3, dt, dz0 - 1.5], [dxr + 1, dt, dz0 - 1.5], [dxr + 1, dt, dz1 + 1.5], [dx - 3, dt, dz1 + 1.5]], '#dfe3e8', m);
-  s += poly([[dx - 3, dt, dz0 - 1.5], [dx - 3, dt, dz1 + 1.5], [dx - 3, dt - 3, dz1 + 1.5], [dx - 3, dt - 3, dz0 - 1.5]], '#c3c9d0', m);
-  s += poly([[dx - 3, dt, dz0 - 1.5], [dxr + 1, dt, dz0 - 1.5], [dxr + 1, dt - 3, dz0 - 1.5], [dx - 3, dt - 3, dz0 - 1.5]], '#e9ecef', m);
+  s += poly([[dx - 3, dt, dz0 - 1.5], [dxr + 1, dt, dz0 - 1.5], [dxr + 1, dt, dz1 + 1.5], [dx - 3, dt, dz1 + 1.5]], '#1d2026', m);
+  s += poly([[dx - 3, dt, dz0 - 1.5], [dx - 3, dt, dz1 + 1.5], [dx - 3, dt - 3, dz1 + 1.5], [dx - 3, dt - 3, dz0 - 1.5]], '#a3aab2', m);
+  s += poly([[dx - 3, dt, dz0 - 1.5], [dxr + 1, dt, dz0 - 1.5], [dxr + 1, dt - 3, dz0 - 1.5], [dx - 3, dt - 3, dz0 - 1.5]], '#c3c9cf', m);
 
   // verges on the street gable
   const vz = -3, dn = (p) => [p[0], p[1] - 3.4, p[2]];
@@ -541,7 +541,7 @@ function sceneSVG(colors) {
     <pattern id="pShutter" patternUnits="userSpaceOnUse" width="10" height="1.3"><rect width="10" height="1.3" fill="#7f858d"/><rect y="1.02" width="10" height=".28" fill="#5c6168"/></pattern>
     <linearGradient id="gWallLight" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".1"/><stop offset="1" stop-color="#000" stop-opacity=".12"/></linearGradient>
     <linearGradient id="gRoofShade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".07"/><stop offset="1" stop-color="#000" stop-opacity=".18"/></linearGradient>
-    <linearGradient id="gDormer" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#eceef1"/><stop offset="1" stop-color="#ccd1d7"/></linearGradient>
+    <linearGradient id="gDormer" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b9bfc6"/><stop offset="1" stop-color="#9da4ac"/></linearGradient>
     <linearGradient id="gDoor" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b8bec5"/><stop offset="1" stop-color="#9aa1a9"/></linearGradient>
     <linearGradient id="gCarRear" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a6abb1"/><stop offset="1" stop-color="#7b8187"/></linearGradient>
     <linearGradient id="gVenus" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2c3036"/><stop offset=".5" stop-color="#1a1c20"/><stop offset="1" stop-color="#101114"/></linearGradient>
