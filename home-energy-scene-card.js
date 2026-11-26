@@ -4,7 +4,7 @@
  * with solar roof, home battery, EV, heat pump and grid connection on a glossy floor.
  * Power lines pulse when energy flows; backdrop and lighting follow the time of day.
  */
-const HESC_VERSION = '3.3.2';
+const HESC_VERSION = '3.3.3';
 
 const I18N = {
   en: {
@@ -167,15 +167,15 @@ function house(m) {
   s += `<g transform="${frameX(0, 0, 0, m)}">
     <polygon points="0,0 ${HW},0 ${HW},${-HE} ${HW / 2},${-HR} 0,${-HE}" fill="url(#pBrick)"/>
     <polygon points="0,0 ${HW},0 ${HW},${-HE} ${HW / 2},${-HR} 0,${-HE}" fill="url(#gWallLight)"/>
-    ${rl(29, 65, 39, 41, '#d9dde2')}${windowL(30, 64, 41, 58, m, { sill: false })}
-    ${rl(30, 64, 44, 58.5, 'url(#pShutter)')}${rl(29, 65, 57.5, 60.5, '#3b4048')}
+    ${rl(29, 65, 39, 41, '#d9dde2')}${windowL(30, 64, 41, 58, m, { sill: false, mull: [38.5, 55.5], tr: 53 })}
+    ${rl(30, 64, 44, 58.5, 'url(#pShutter)', 'class="shutter"')}${rl(29, 65, 57.5, 60.5, '#3b4048')}
     ${windowL(42.5, 50.5, 74, 97, m)}
   </g>`;
   // bay window volume
   s += `<g transform="${frameZ(14, 0, 0, m)}">${rl(-10, 0, 0, 32, 'url(#pBrick)')}${rl(-10, 0, 0, 32, '#000', 'opacity=".2"')}${rl(-10, 0, 30.5, 32.6, '#c4cad1')}</g>`;
   s += `<g transform="${frameX(0, 0, -10, m)}">
     ${rl(14, 80, 0, 32, 'url(#pBrick)')}${rl(14, 80, 0, 32, 'url(#gWallLight)')}${rl(14, 80, 30.5, 32.6, '#eceff2')}
-    ${windowL(19, 75, 9, 27.5, m, { mull: [33, 61] })}${rl(19, 33, 22, 23, '#f4f6f8')}${rl(61, 75, 22, 23, '#f4f6f8')}
+    ${windowL(19, 75, 9, 27.5, m, { mull: [33, 61] })}${rl(19, 75, 22, 23, '#f4f6f8')}
   </g>`;
   if (m > 0) s += poly([[14, 32.6, -10], [80, 32.6, -10], [80, 32.6, 0], [14, 32.6, 0]], '#e2e6ea', m);
   if (m < 0) return s;
@@ -239,7 +239,7 @@ function garage(m) {
   s += poly([[x1, 0, z0], [x1, 0, z1], [x1, h, z1], [x1, h, z0]], '#eef1f4', m);
   s += `<g class="garagewarm">${poly([[x0, 0, z1], [x1, 0, z1], [x1, h, z1], [x0, h, z1]], 'url(#gGarageWarm)', m)}${poly([[x1, 0, z0], [x1, 0, z1], [x1, h, z1], [x1, h, z0]], 'url(#gGarageWarm)', m)}</g>`;
   // outside walls
-  s += `<g transform="${frameZ(x0, 0, 0, m)}">${rl(z0, z1, 0, h, 'url(#pWood)')}${rl(z0, z1, 0, h, '#000', 'opacity=".3"')}</g>`;
+  s += `<g transform="${frameZ(x0, 0, 0, m)}">${rl(z0, z1, 0, h, '#eef1f4')}${rl(z0, z1, 0, h, '#000', 'opacity=".14"')}</g>`;
   s += poly([[d1, 0, z0], [d1, 0, z0 + 2], [d1, dh, z0 + 2], [d1, dh, z0]], '#6b4626', m);
   const hole = `M${x0} 0H${x1}V${-h}H${x0}ZM${d0} 0V${-dh}H${d1}V0Z`;
   s += `<g transform="${frameX(0, 0, z0, m)}">
@@ -934,6 +934,8 @@ class HomeEnergySceneCard extends HTMLElement {
 
     // lights
     $$('.winwarm').forEach((w) => w.setAttribute('opacity', (0.12 + 0.88 * lamp).toFixed(2)));
+    const shut = clamp((n - 0.35) / 0.3); // roller shutter: open by day, down after dusk
+    $$('.shutter').forEach((r) => r.setAttribute('height', (14.5 * shut).toFixed(2)));
     $$('.garagewarm').forEach((w) => w.setAttribute('opacity', (0.9 * lamp).toFixed(2)));
     $('spill').setAttribute('opacity', (0.75 * lamp).toFixed(2));
     $('bloom').setAttribute('opacity', lamp.toFixed(2));
